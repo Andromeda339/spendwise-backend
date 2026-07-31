@@ -1,0 +1,171 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum AccountType {
+  CASH
+  CARD
+  DEPOSIT
+  JAR
+  OTHER
+}
+
+enum Currency {
+  UAH
+  USD
+  EUR
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+// ==========================================
+// MODELS
+// ==========================================
+
+model Household {
+  id         Int        @id @default(autoincrement())
+  clientId   String?    @unique // 
+  name       String
+  inviteCode String?    @unique
+  createdAt  DateTime   @default(now())
+
+  users      User[]
+  accounts   Account[]
+  categories Category[]
+  budgets    Budget[]
+
+  @@map("households")
+}
+
+model User {
+  id           String     @id // Унікальний Firebase UID
+  login        String     @unique
+  email        String     @unique // Обов'язкове поле для Firebase
+  passwordHash String?    // Опціональне (паролі тепер у Firebase)
+  createdAt    DateTime   @default(now())
+  
+  householdId  Int?
+  household    Household? @relation(fields: [householdId], references: [id], onDelete: SetNull)
+
+  accounts     Account[]
+  categories   Category[]
+  budgets      Budget[]
+  transactions Transaction[] 
+
+  @@index([householdId])
+  @@map("users")
+}
+
+model Account {
+  id          Int           @id @default(autoincrement())
+  clientId    String?       // Унікальний ID для офлайн-режиму фронтенду
+  userId      String        // Зв'язок із String ID користувача
+  householdId Int?
+  name        String
+  type        AccountType
+  currency    Currency      @default(UAH)
+  balance     Decimal       @default(0.0) @db.Decimal(15, 2)
+  createdAt   DateTime      @default(now())
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household   Household?    @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([householdId])
+  @@unique([userId, clientId]) // Захист від дублів у межах одного юзера
+  @@map("accounts")
+}
+
+model Category {
+  id          Int              @id @default(autoincrement())
+  clientId    String?          // Унікальний ID для офлайн-режиму фронтенду
+  userId      String?          // Зв'язок із String ID користувача
+  householdId Int?
+  name        String
+  type        TransactionType
+  isStorage   Boolean          @default(false)
+
+  user        User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household   Household?   @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  budgets      Budget[]
+
+  @@index([userId])
+  @@index([householdId])
+  @@unique([userId, clientId]) // Захист від дублів у межах одного юзера
+  @@map("categories")
+}
+
+model Transaction {
+  id               Int              @id @default(autoincrement())
+  clientId         String?          // Унікальний ID для офлайн-режиму фронтенду
+  accountId        Int
+  categoryId       Int
+  userId           String?          // Зв'язок із String ID користувача
+  type             TransactionType
+  amount           Decimal          @db.Decimal(15, 2)
+  description      String?          @db.Text
+  transactionDate  DateTime
+  createdAt        DateTime         @default(now())
+  
+  isTransfer       Boolean          @default(false)
+  relatedAccountId Int?
+
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  user     User?    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  receipt  Receipt?
+
+  @@index([accountId])
+  @@index([categoryId])
+  @@index([userId])
+  @@index([transactionDate])
+  @@unique([userId, clientId]) // Захист від дублів у межах одного юзера
+  @@map("transactions")
+}
+
+model Receipt {
+  id            Int          @id @default(autoincrement())
+  transactionId Int          @unique
+  receiptUrl    String       @db.VarChar(512)
+  uploadedAt    DateTime     @default(now())
+
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@map("receipts")
+}
+
+model Budget {
+  id          Int        @id @default(autoincrement())
+  clientId    String?    // 
+  userId      String?    // Зв'язок із String ID користувача
+  householdId Int?
+  categoryId  Int
+  maxAmount   Decimal    @db.Decimal(15, 2)
+  month       Int
+  year        Int
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household   Household? @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category    Category   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([householdId])
+  @@index([categoryId])
+  @@unique([userId, clientId]) 
+  @@map("budgets")
+}
